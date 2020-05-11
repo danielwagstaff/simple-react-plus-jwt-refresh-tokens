@@ -1,32 +1,43 @@
 import React, { useState, useContext } from 'react';
 import { Link, Redirect } from 'react-router-dom';
 import { AuthContext } from '../authentication/Authentication';
-import { Button, Form, FormGroup, Label, Input } from 'reactstrap';
+import { Button, Form, FormGroup, FormText, Label, Input } from 'reactstrap';
 
 export default function BusinessRegistration(props) {
     const authContext = useContext(AuthContext);
-    const firstName = useFormInput("");
-    const lastName = useFormInput("");
     const email = useFormInput("");
     const password = useFormInput("");
-    const businessPhone = useFormInput("", (val => val.replace(" ", "")));
     const [passwordBoxType, setPasswordBoxType] = useState("password");
     const [registrationStatus, setRegistrationStatus] = useState("");
     const [validationErrors, setValidationErrors] = useState([]);
 
-    function handleRegister(event) {
+    function handleSubmit(event) {
         event.preventDefault();
+
+        const onRegistrationConflict = () => {
+            setRegistrationStatus("Registration failed. That email address has already been registered");
+            setValidationErrors([]);
+        };
+
+        const onRegistrationBadRequest = (invalidParams) => {
+            setRegistrationStatus("Registration failed");
+            setValidationErrors(invalidParams);
+        };
+
+        const onRegistrationInternalError = () => {
+            setRegistrationStatus("Registration failed due to website error");
+            setValidationErrors([]);
+        };
+
         setRegistrationStatus("Registering...");
-        authContext.register(
-            firstName.value,
-            lastName.value,
+        authContext.signUp(
             email.value,
             password.value,
-            businessPhone.value,
-            (status) => {
-                setRegistrationStatus(getRegistrationMessageFromStatus(status));
-                setValidationErrors(Object.values(status.validationErrors));
-            });
+            null, /* Do nothing for success, as once user is signed in, will be redirected */
+            onRegistrationConflict,
+            onRegistrationBadRequest,
+            onRegistrationInternalError,
+        );
     }
 
     function handlePasswordVisibility(e) {
@@ -45,20 +56,9 @@ export default function BusinessRegistration(props) {
 
                 <Form>
                     <FormGroup>
-                        <Label for="firstname">First name</Label>
-                        <Input type="text" placeholder="first name" id="firstname" {...firstName} />
-                    </FormGroup>
-                    <FormGroup>
-                        <Label for="surname">Surname</Label>
-                        <Input type="text" placeholder="surname" id="surname" {...lastName} />
-                    </FormGroup>
-                    <FormGroup>
-                        <Label for="phone">Business phone</Label>
-                        <Input type="tel" placeholder="01483 487958" id="phone" {...businessPhone} />
-                    </FormGroup>
-                    <FormGroup>
-                        <Label for="email">Email address</Label>
+                        <Label for="email">Business email</Label>
                         <Input type="email" placeholder="name@example.com" id="email" {...email} />
+                        <FormText>your publicly visible business contact email</FormText>
                     </FormGroup>
                     <FormGroup>
                         <Label for="password">Password</Label>
@@ -70,9 +70,9 @@ export default function BusinessRegistration(props) {
                             Show password?
                         </Label>
                     </FormGroup>
-                    <Button color="primary" type="submit" onClick={handleRegister}>
+                    <Button color="primary" type="submit" onClick={handleSubmit}>
                         Submit
-                            </Button>
+                    </Button>
                 </Form>
 
                 <RegistrationStatus status={registrationStatus} />
@@ -117,45 +117,15 @@ function ValidationError(props) {
     );
 }
 
-function useFormInput(initValue, validate) {
+function useFormInput(initValue) {
     const [value, setValue] = useState(initValue);
 
     function handleChange(e) {
         setValue(e.target.value);
     }
 
-    function handleValidation(e) {
-        if (validate) {
-            setValue(validate(e.target.value));
-        }
-    }
-
     return {
         value,
-        onChange: handleChange,
-        onBlur: handleValidation,
+        onChange: handleChange
     };
-}
-
-function getRegistrationMessageFromStatus({
-    isBadRequest = false,
-    isConflict = false,
-    isInternalError = false,
-    registrationFailed = false }) {
-    if (!registrationFailed()) {
-        return "Registered";
-    }
-    else if (isBadRequest) {
-        return "Registration failed";
-    }
-    else if (isConflict) {
-        return "Registration failed. That email address has already been registered";
-    }
-    else if (isInternalError) {
-        return "Registration failed due to website error";
-    }
-    else {
-        console.error("unhandled registration status");
-        return "Registration failed due to website error";
-    }
 }

@@ -13,14 +13,35 @@ export default function BusinessLogin(props) {
 
     function handleLogin(e) {
         e.preventDefault();
+
+        const onSignInOk = () => {
+            setLoginStatus("Logged in");
+            setValidationErrors([]);
+        };
+
+        const onSignInUnathorized = () => {
+            setLoginStatus("Login failed. Wrong username or password");
+            setValidationErrors([]);
+        };
+
+        const onSignInBadRequest = (invalidParams) => {
+            setLoginStatus("Login failed");
+            setValidationErrors(invalidParams);
+        };
+
+        const onSignInInternalError = () => {
+            setLoginStatus("Login failed due to website error");
+            setValidationErrors([]);
+        };
+
         setLoginStatus("Logging in...");
-        authContext.login(
+        authContext.signIn(
             email.value,
             password.value,
-            (status) => {
-                setLoginStatus(getLoginMessageFromStatus(status));
-                setValidationErrors(Object.values(status.validationErrors));
-            });
+            onSignInOk,
+            onSignInUnathorized,
+            onSignInBadRequest,
+            onSignInInternalError);
     }
 
     function handlePasswordVisibility(e) {
@@ -54,7 +75,7 @@ export default function BusinessLogin(props) {
                     </FormGroup>
                     <Button color="primary" type="submit" onClick={handleLogin}>
                         Submit
-                            </Button>
+                    </Button>
                 </Form>
 
                 <LoginStatus status={loginStatus} />
@@ -110,23 +131,4 @@ function useFormInput(initValue) {
         value,
         onChange: handleChange
     };
-}
-
-function getLoginMessageFromStatus({ loginFailed = false, isBadRequest = false, isUnathorized = false, isInternalError = false }) {
-    if (!loginFailed()) {
-        return "Logged in";
-    }
-    else if (isBadRequest) {
-        return "Login failed";
-    }
-    else if (isUnathorized) {
-        return "Login failed. Wrong username or password";
-    }
-    else if (isInternalError) {
-        return "Login failed, due to website error";
-    }
-    else {
-        console.error("unhandled login status");
-        return "Login failed due to website error";
-    }
 }

@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Http;
@@ -22,25 +20,25 @@ namespace SignOn.Controllers
     {
         private readonly string COOKIE_REFRESH_TOKEN = "auth_refresh_token";
         private readonly ILogger<AuthController> _logger;
-        private readonly IUserService _userService;
+        private readonly IAuthenticationService _authService;
 
-        public AuthController(ILogger<AuthController> logger, IUserService userService)
+        public AuthController(ILogger<AuthController> logger, IAuthenticationService authService)
         {
             _logger = logger;
-            _userService = userService;
+            _authService = authService;
         }
 
         [AllowAnonymous]
-        [HttpPost]
-        public IActionResult Register([FromBody]RegisterUserDto user)
+        [HttpPost("business")]
+        public IActionResult SignUp([FromBody]SignUpDto user)
         {
-            var registeredUser = _userService.Register(user.FirstName, user.LastName, user.Email, user.Phone, user.Password);
+            var registeredUser = _authService.SignUp(user.Email, user.Password);
 
             if (registeredUser != null)
             {
                 SetRefreshTokenCookie(registeredUser.JwtRefreshToken.ToString());
 
-                return Ok(new AuthenticatedUserDto()
+                return Ok(new AuthenticatedDto()
                 {
                     Jwt = registeredUser.Jwt.Token,
                     JwtExpiry = registeredUser.Jwt.Expires
@@ -54,18 +52,17 @@ namespace SignOn.Controllers
 
         [AllowAnonymous]
         [HttpPost("authenticate")]
-        public IActionResult Authenticate([FromBody]AuthenticateUserDto authenticateUser)
+        public IActionResult SignIn([FromBody]SignInDto authenticateUser)
         {
-            var user = _userService.Authenticate(authenticateUser.Email, authenticateUser.Password);
+            var authToken = _authService.SignIn(authenticateUser.Email, authenticateUser.Password);
 
-            if (user != null)
+            if (authToken != null)
             {
-                SetRefreshTokenCookie(user.JwtRefreshToken.ToString());
-                
-                return Ok(new AuthenticatedUserDto()
+                SetRefreshTokenCookie(authToken.JwtRefreshToken.ToString());
+                return Ok(new AuthenticatedDto()
                 {
-                    Jwt = user.Jwt.Token,
-                    JwtExpiry = user.Jwt.Expires
+                    Jwt = authToken.Jwt.Token,
+                    JwtExpiry = authToken.Jwt.Expires
                 });
             }
             else
@@ -82,15 +79,14 @@ namespace SignOn.Controllers
 
             if (!string.IsNullOrWhiteSpace(refreshToken))
             {
-                if(Guid.TryParse(refreshToken, out var token))
+                if (Guid.TryParse(refreshToken, out var token))
                 {
-                    var refreshedJwt = _userService.Refresh(token);
+                    var refreshedJwt = _authService.Refresh(token);
 
                     if (refreshedJwt != null)
                     {
-                        SetRefreshTokenCookie(refreshedJwt.RefreshToken.ToString());
-                        
-                        return Ok(new AuthenticatedUserDto()
+                        SetRefreshTokenCookie(refreshedJwt.JwtRefreshToken.ToString());
+                        return Ok(new AuthenticatedDto()
                         {
                             Jwt = refreshedJwt.Jwt.Token,
                             JwtExpiry = refreshedJwt.Jwt.Expires
@@ -98,25 +94,13 @@ namespace SignOn.Controllers
                     }
                     else
                     {
-                        Response.Cookies.Delete(COOKIE_REFRESH_TOKEN,
-                                            new CookieOptions()
-                                            {
-                                                Expires = DateTime.Now.AddDays(1),
-                                                HttpOnly = true
-                                            });
-
+                        Response.Cookies.Delete(COOKIE_REFRESH_TOKEN);
                         return Unauthorized();
                     }
                 }
                 else
                 {
-                    Response.Cookies.Delete(COOKIE_REFRESH_TOKEN,
-                                            new CookieOptions()
-                                            {
-                                                Expires = DateTime.Now.AddDays(1),
-                                                HttpOnly = true
-                                            });
-
+                    Response.Cookies.Delete(COOKIE_REFRESH_TOKEN);
                     return BadRequest("Refresh token badly formatted");
                 }
             }
@@ -126,32 +110,20 @@ namespace SignOn.Controllers
             }
         }
 
-        [HttpPost("logout")]
-        public IActionResult LogOut()
+        [HttpPost("sign-out")]
+        public IActionResult SignOut()
         {
             var userId = GetUserId();
             if (userId.HasValue)
             {
-                _userService.LogOut(userId.Value);
+                _authService.RevokeRefresh(userId.Value);
+                Response.Cookies.Delete(COOKIE_REFRESH_TOKEN);
                 return Ok();
             }
             else
             {
                 return Unauthorized();
             }
-        }
-
-
-        [HttpGet]
-        public IEnumerable<UserDto> Get()
-        {
-            return _userService.GetAll().Select(user => new UserDto()
-            {
-                Id = user.Id,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Email = user.Email,
-            });
         }
 
         #region Helper Methods
@@ -171,7 +143,7 @@ namespace SignOn.Controllers
         public long? GetUserId()
         {
             var principal = HttpContext.User;
-            var userId = principal?.Claims?.FirstOrDefault(claim => claim.Type == ClaimTypes.NameIdentifier).Value;
+            var userId = principal?.Claims?.FirstOrDefault(claim => claim.Type == "nameidentifier")?.Value;
             if (userId != null)
             {
                 return long.Parse(userId);

@@ -12,48 +12,44 @@ using System.Security.Cryptography;
 
 namespace SignOn.Services
 {
-    public interface IUserService
+    public interface IAuthenticationService
     {
-        AuthenticatedUser Register(string firstName, string lastName, string email, string phoneNumber, string password);
-        AuthenticatedUser Authenticate(string username, string password);
-        RefreshedJwt Refresh(Guid refreshToken);
-        void LogOut(long userId);
-        IEnumerable<User> GetAll();
+        AuthToken SignUp(string email, string password);
+        AuthToken SignIn(string username, string password);
+        AuthToken Refresh(Guid refreshToken);
+        void RevokeRefresh(long userId);
     }
 
-    public class UserService : IUserService
+    public class AuthenticationService : IAuthenticationService
     {
-        private readonly ILogger<UserService> _logger;
+        private readonly ILogger<AuthenticationService> _logger;
         private readonly JwtKeys _jwtKeys;
-        private static readonly List<User> users = new List<User>();
+        private static readonly List<User> registered = new List<User>();
 
-        public UserService(ILogger<UserService> logger, IOptions<JwtKeys> appSettings)
+        public AuthenticationService(ILogger<AuthenticationService> logger, IOptions<JwtKeys> appSettings)
         {
             _logger = logger;
             _jwtKeys = appSettings.Value;
         }
 
-        public AuthenticatedUser Register(string firstName, string lastName, string email, string phoneNumber, string password)
+        public AuthToken SignUp(string email, string password)
         {
-            var user = users.Where(user => user.Email == email).FirstOrDefault();
+            var user = registered.Where(user => user.Email == email).FirstOrDefault();
 
             if (user == null)
             {
                 var newUser = new User()
                 {
-                    Id = (users.LastOrDefault() ?? new User()).Id + 1,
-                    FirstName = firstName,
-                    LastName = lastName,
+                    Id = (registered.LastOrDefault() ?? new User()).Id + 1,
                     Email = email,
-                    PhoneNumber = phoneNumber,
                     Password = password,
-                    Roles = new string[] { UserRoles.ROLE_RESTAURANT_OWNER },
+                    Roles = new string[] { AuthRoles.ROLE_RESTAURANT_OWNER },
                     RefreshToken = Guid.NewGuid()
                 };
 
-                users.Add(newUser);
+                registered.Add(newUser);
 
-                return new AuthenticatedUser()
+                return new AuthToken()
                 {
                     Jwt = CreateJwt(newUser),
                     JwtRefreshToken = newUser.RefreshToken
@@ -64,10 +60,10 @@ namespace SignOn.Services
                 return null;
             }
         }
-
-        public AuthenticatedUser Authenticate(string email, string password)
+        
+        public AuthToken SignIn(string username, string password)
         {
-            var user = users.SingleOrDefault(x => x.Email == email && x.Password == password);
+            var user = registered.SingleOrDefault(x => x.Email == username && x.Password == password);
 
             if (user == null)
             {
@@ -76,7 +72,7 @@ namespace SignOn.Services
             else
             {
                 user.RefreshToken = Guid.NewGuid();
-                return new AuthenticatedUser()
+                return new AuthToken()
                 {
                     Jwt = CreateJwt(user),
                     JwtRefreshToken = user.RefreshToken
@@ -84,16 +80,16 @@ namespace SignOn.Services
             }
         }
 
-        public RefreshedJwt Refresh(Guid refreshToken)
+        public AuthToken Refresh(Guid refreshToken)
         {
-            var user = users.SingleOrDefault(user => user.RefreshToken == refreshToken);
+            var user = registered.SingleOrDefault(user => user.RefreshToken == refreshToken);
             if (user != null)
             {
                 user.RefreshToken = Guid.NewGuid();
-                return new RefreshedJwt()
+                return new AuthToken()
                 {
                     Jwt = CreateJwt(user),
-                    RefreshToken = user.RefreshToken
+                    JwtRefreshToken = user.RefreshToken
                 };
             }
             else
@@ -102,10 +98,10 @@ namespace SignOn.Services
             }
         }
 
-        public void LogOut(long userId)
+        public void RevokeRefresh(long userId)
         {
             _logger.LogInformation($"Logging out user, ID: {userId}");
-            var user = users.SingleOrDefault(user => user.Id == userId);
+            var user = registered.SingleOrDefault(user => user.Id == userId);
             if (user != null)
             {
                 user.RefreshToken = Guid.NewGuid(); //create a new un-guessable token - null could be guessable
@@ -114,11 +110,6 @@ namespace SignOn.Services
             {
                 _logger.LogError($"Cannot log out user, ID not found: {userId}");
             }
-        }
-
-        public IEnumerable<User> GetAll()
-        {
-            return users;
         }
 
         #region Helper Methods
@@ -132,15 +123,12 @@ namespace SignOn.Services
 
             var claims = new List<Claim>()
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.GivenName, user.FirstName),
-                new Claim(ClaimTypes.Surname, user.LastName),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.OtherPhone, user.PhoneNumber),
+                new Claim("nameidentifier", user.Id.ToString()),
+                new Claim("email", user.Email),
             };
             foreach (var userRole in user.Roles)
             {
-                claims.Add(new Claim(ClaimTypes.Role, userRole));
+                claims.Add(new Claim("role", userRole));
             }
 
             var utcNow = DateTime.UtcNow;

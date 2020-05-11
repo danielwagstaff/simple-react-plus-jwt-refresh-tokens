@@ -1,25 +1,28 @@
 ﻿import React from 'react';
 import { CardBody, Card } from 'reactstrap';
 
-export default function Restaurant(props) {
-    if (props.restaurant) {
+export default function Restaurant({ restaurant }) {
+    if (restaurant) {
         return (
             <Card>
                 <CardBody>
                     <div>
-                        <h3>{props.restaurant.businessName}</h3>
+                        <h3>{restaurant.businessName}</h3>
                     </div>
                     <div>
-                        {props.restaurant.addressLine1}, {props.restaurant.addressLine2}, {props.restaurant.town}, {props.restaurant.county}, {props.restaurant.postCode}
+                        {restaurant.addressLine1}, {restaurant.addressLine2}, {restaurant.town}, {restaurant.county}, {restaurant.postCode}
                     </div>
                     <div>
-                        tel: {props.restaurant.phone}
+                        tel: {restaurant.phone}
                     </div>
                     <div>
-                        email: {props.restaurant.email}
+                        email: {restaurant.email}
                     </div>
                     <div>
-                        Number of available servings: {props.restaurant.numberOfAvailableServings}
+                        Verified? {restaurant.isVerified === true ? "Yes" : "No"}
+                    </div>
+                    <div>
+                        Number of available servings: {restaurant.numberOfAvailableServings}
                     </div>
                 </CardBody>
             </Card>

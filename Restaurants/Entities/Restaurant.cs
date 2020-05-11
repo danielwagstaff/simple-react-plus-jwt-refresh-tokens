@@ -41,6 +41,8 @@ namespace Restaurants.Entities
         [Phone]
         public string Phone { get; set; }
 
+        public bool IsVerified { get; set; }
+        
         public int NumberOfAvailableServings { get; set; }
     }
 }

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SignOn.Models.DTOs
 {
-    public class AuthenticateUserDto
+    public class SignInDto
     {
         [Required]
         [EmailAddress]

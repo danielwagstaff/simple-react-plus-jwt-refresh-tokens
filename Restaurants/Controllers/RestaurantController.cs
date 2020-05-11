@@ -6,13 +6,11 @@ using Restaurants.Entities;
 using Restaurants.Models.DTOs;
 using Restaurants.Services;
 using System.Linq;
-using System.Security.Claims;
 
 namespace Restaurants.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    [Authorize(Roles = "RestaurantOwner")]
     [EnableCors("_corsSpecificOrigins")]
     public class RestaurantController : ControllerBase
     {
@@ -27,6 +25,7 @@ namespace Restaurants.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "RestaurantOwner")]
         public IActionResult Add([FromBody]AddRestaurantDto restaurantDto)
         {
             var userId = GetUserId();
@@ -54,6 +53,10 @@ namespace Restaurants.Controllers
                 {
                     return Conflict();
                 }
+                catch (OwnerAlreadyHasRestaurantException)
+                {
+                    return StatusCode(423);
+                }
             }
             else
             {
@@ -61,8 +64,61 @@ namespace Restaurants.Controllers
             }
         }
 
+        [HttpPost]
+        [Route("{restaurantId}/servings/{numberAvailable}")]
+        [Authorize(Roles = "RestaurantOwner")]
+        public IActionResult UpdateNumberOfServings(long restaurantId, int numberAvailable)
+        {
+            var userId = GetUserId();
+            if (userId.HasValue)
+            {
+                try
+                {
+                    _restaurantService.UpdateNumberOfServings(userId.Value, restaurantId, numberAvailable);
+                    return Ok();
+                }
+                catch (RestaurantNotOwnedByRequestorException)
+                {
+                    return Forbid();
+                }
+                catch (RestaurantDoesNotExistException)
+                {
+                    return NotFound();
+                }
+                catch (RestaurantIdDuplicatedException)
+                {
+                    return StatusCode(INTERNAL_SERVER_ERROR);
+                }
+            }
+            else
+            {
+                return Unauthorized();
+            }
+        }
+
+        [HttpPost]
+        [Route("{restaurantId}/validate")]
+        [Authorize(Roles = "Admin")]
+        public IActionResult Verify(long restaurantId)
+        {
+            try
+            {
+                _restaurantService.Verify(restaurantId);
+                return Ok();
+            }
+            catch (RestaurantDoesNotExistException)
+            {
+                return NotFound();
+            }
+            catch (RestaurantIdDuplicatedException)
+            {
+                return StatusCode(INTERNAL_SERVER_ERROR);
+            }
+        }
+
         [HttpDelete]
         [Route("{restaurantId}")]
+        [Authorize(Roles = "RestaurantOwner")]
         public IActionResult Remove(long restaurantId)
         {
             var userId = GetUserId();
@@ -90,7 +146,7 @@ namespace Restaurants.Controllers
                 }
                 catch (RestaurantIdDuplicatedException)
                 {
-                    return Conflict();
+                    return StatusCode(INTERNAL_SERVER_ERROR);
                 }
             }
             else
@@ -111,7 +167,7 @@ namespace Restaurants.Controllers
         public long? GetUserId()
         {
             var principal = HttpContext.User;
-            var userId = principal?.Claims?.FirstOrDefault(claim => claim.Type == ClaimTypes.NameIdentifier).Value;
+            var userId = principal?.Claims?.FirstOrDefault(claim => claim.Type == "nameidentifier")?.Value;
             if (userId != null)
             {
                 return long.Parse(userId);

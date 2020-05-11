@@ -1,112 +1,126 @@
 import React, { useContext, useState, useEffect, useCallback } from 'react';
-import { Button, Collapse, CardBody, Card, Form, FormGroup, Label, Input, Spinner } from 'reactstrap';
+import { Form, FormGroup, Input, Button, Collapse, CardBody, Card, Spinner, ButtonGroup } from 'reactstrap';
 import { AuthContext } from '../authentication/Authentication';
 import Restaurant from '../restaurant/Restaurant';
+import AddRestaurant from '../restaurant/AddRestaurant';
+import { GetUserRestaurantAsync, DeleteRestaurantAsync, UpdateNumberOfServingsAsync } from '../../services/restaurants/RestaurantsService';
 
 export default function Business(props) {
     const authContext = useContext(AuthContext);
-    const [userRestaurants, setUserRestaurants] = useState([]);
-    const [fetchRestaurantsStatus, setFetchRestaurantsStatus] = useState("");
+    const [restaurants, setRestaurants] = useState([]);
     const [isAddRestaurantFormOpen, setIsAddRestaurantFormOpen] = useState(false);
-    const [mainStatus, setMainStatus] = useState("");
-
-    function toggleAddRestaurantForm() {
-        setIsAddRestaurantFormOpen(!isAddRestaurantFormOpen);
-    }
+    const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
+    const [okStatus, setOkStatus] = useState("");
+    const [errorStatus, setErrorStatus] = useState("");
 
     function handleLogout(e) {
         e.preventDefault();
-        authContext.logout();
+        authContext.signOut();
     }
 
-    const getAllBusinessesForUser = useCallback(
+    const getUserRestaurant = useCallback(
         async () => {
-            setFetchRestaurantsStatus("Retrieving your restaurants...");
+            setIsLoadingRestaurants(true);
 
-            const currentUserId = authContext.currentUser.id;
-            const paramOwnerId = currentUserId != null ? "ownerId=" + currentUserId : "";
-            const response = await fetch('https://localhost:44305/restaurant?' + paramOwnerId, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: null,
-            });
+            const onOk = (fetchedRestaurants) => {
+                setIsLoadingRestaurants(false);
+                setRestaurants(fetchedRestaurants);
+            };
 
-            if (response.status >= 200 && response.status <= 299) {
-                const restaurants = await response.json();
-                setUserRestaurants(restaurants);
-                setFetchRestaurantsStatus("");
-            }
-            else if (response.status === 401 || response.status === 403) {
-                authContext.logout();
-            }
-            else {
-                setFetchRestaurantsStatus("Sorry, but we are unable to fetch your restaurants, due to a problem with the website");
-            }
+            const onInternalServerError = () => {
+                setIsLoadingRestaurants(false);
+                setErrorStatus("Sorry, but we are unable to fetch your restaurant, due to a problem with the website");
+            };
+
+            GetUserRestaurantAsync(authContext.currentUser.id, onOk, onInternalServerError
+            );
         }, [authContext],
     );
 
     useEffect(() => {
-        getAllBusinessesForUser();
-    }, [getAllBusinessesForUser]);
+        getUserRestaurant();
+    }, [getUserRestaurant]);
 
-    let restaurants;
-    if (userRestaurants.length > 0) {
-        restaurants = userRestaurants.map(r =>
-            <div className="py-2" key={r.businessName}>
-                <Restaurant restaurant={r} />
-                <DeleteRestaurant
-                    restaurantId={r.id}
-                    jwt={authContext.currentUser.jwt}
-                    onRestaurantDeleted={() => {
-                        getAllBusinessesForUser();
-                        setMainStatus("Successfully deleted restaurant");
-                        setTimeout(() => { setMainStatus(""); }, 3000);
-                    }}
-                    onError={(msg) => {
-                        setMainStatus(msg);
-                    }} />
+    let displayRestaurants;
+    if (restaurants.length === 0) {
+        displayRestaurants =
+            <div>
+                <div>You have no registered restaurant yet</div>
+                <Button
+                    color="primary"
+                    onClick={() => setIsAddRestaurantFormOpen(!isAddRestaurantFormOpen)}
+                    style={{ marginBottom: '1rem' }}>
+                    Add your restaurant
+                </Button>
+                <Collapse isOpen={isAddRestaurantFormOpen}>
+                    <Card>
+                        <CardBody>
+                            <AddRestaurant
+                                email={authContext.currentUser.email}
+                                onAdded={() => {
+                                    setIsAddRestaurantFormOpen(false);
+                                    getUserRestaurant();
+                                    setOkStatus("Restaurant successfully added");
+                                    setTimeout(() => setOkStatus(""), 3000);
+                                }} />
+                        </CardBody>
+                    </Card>
+                </Collapse>
             </div>
-        );
     }
     else {
-        restaurants = <div>You have no registered restaurants yet</div>
+        displayRestaurants = restaurants.map(r =>
+            <div className="py-2" key={r.businessName}>
+                <Restaurant restaurant={r} />
+
+                <hr />
+
+                <UpdateNumberOfServings restaurantId={r.id} onSuccess={() => getUserRestaurant()} />
+
+                <hr />
+
+                <DeleteRestaurant
+                    restaurantId={r.id}
+                    onRestaurantDeleted={() => {
+                        getUserRestaurant();
+                        setOkStatus("Successfully removed restaurant");
+                        setTimeout(() => { setOkStatus(""); }, 3000);
+                    }}
+                    onError={(msg) => {
+                        setErrorStatus(msg);
+                    }}
+                />
+            </div>);
     }
 
     return (
         <div>
             <Button color="secondary" className="float-right" onClick={handleLogout}>Logout</Button>
-            <h2>Hello, {props.currentUser.firstName} {props.currentUser.lastName}</h2>
+            <h2>Restaurant Details</h2>
 
-            <h1>Your Restaurants</h1>
-            <Button color="primary" onClick={toggleAddRestaurantForm} style={{ marginBottom: '1rem' }}>Add a business</Button>
-            <MainStatus status={mainStatus} />
-            <Collapse isOpen={isAddRestaurantFormOpen}>
-                <Card>
-                    <CardBody>
-                        <AddRestaurant onRestaurantAdded={() => {
-                            setIsAddRestaurantFormOpen(false);
-                            getAllBusinessesForUser();
-                            setMainStatus("Successfully added restaurant");
-                            setTimeout(() => { setMainStatus(""); }, 3000);
-                        }} jwt={authContext.currentUser.jwt} />
-                    </CardBody>
-                </Card>
-                <hr />
-            </Collapse>
+            <Status status={errorStatus} isError={true} />
+            <Status status={okStatus} />
 
-            <FetchRestaurantsStatus status={fetchRestaurantsStatus} />
-            {restaurants}
+            {displayRestaurants}
+
+            <LoadingScreen show={isLoadingRestaurants} />
         </div>
     );
 }
 
-function MainStatus(props) {
-    if (props.status) {
+function Status({ status, isError }) {
+    let bgColour;
+    if (isError && isError === true) {
+        bgColour = "bg-danger";
+    }
+    else{
+        bgColour = "bg-success";
+    };
+
+    if (status) {
         return (
-            <div className="p-2 my-2 bg-success text-white">
-                {props.status}
+            <div className={`p-2 my-2 ${bgColour} text-white`}>
+                {status}
             </div>
         );
     }
@@ -115,229 +129,167 @@ function MainStatus(props) {
     }
 }
 
-function FetchRestaurantsStatus(props) {
-    if (props.status) {
+function LoadingScreen({ show }) {
+    if (show === true) {
         return (
-            <div className="p-2 my-2 bg-warning text-dark">
-                {props.status}
-            </div>
-        );
+            <div style={{
+                backgroundColor: "rgba(112, 128, 144, 0.90)",
+                position: "fixed",
+                minHeight: "100vh",
+                minWidth: "100vw",
+                top: "0",
+                left: "0",
+                margin: "0"
+            }}>
+                <h1 style={{ padding: "10vw", color: "white", top: "50%", left: "50%", transform: "translate(-50%, -50%)", position: "absolute" }}>
+                    Fetching your restaurant details...
+                </h1>
+            </div>);
     }
     else {
-        return (<div></div>);
+        return <div></div>;
     }
 }
 
-function AddRestaurant(props) {
-    const businessName = useFormInput("");
-    const addressLine1 = useFormInput("");
-    const addressLine2 = useFormInput("");
-    const town = useFormInput("");
-    const county = useFormInput("");
-    const postCode = useFormInput("");
-    const email = useFormInput("");
-    const phone = useFormInput("", (val) => val.replace(" ", ""));
-    const [addingStatus, setAddingStatus] = useState("");
-    const [validationErrors, setValidationErrors] = useState([]);
+function DeleteRestaurant({ restaurantId, onRestaurantDeleted, onError }) {
+    const authContext = useContext(AuthContext);
+    const [isDeleteRequested, setIsDeleteRequested] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    function handleAddNewRestaurant(e) {
+    function handleDelete(e) {
         e.preventDefault();
-        addNewRestaurant();
+
+        const deleteRestaurant = () => {
+            setIsDeleting(true);
+
+            const onOk = () => {
+                setIsDeleting(false);
+                onRestaurantDeleted();
+            };
+
+            const onUnauthorized = () => {
+                onError("Unable to remove restaurant as your session has timed out. Please log in again.");
+            };
+
+            const onForbidden = () => {
+                onError("Unable to remove restaurant as you do not have permission to do this.");
+            };
+
+            const onNotFound = () => {
+                onError("Sorry, but we are unable to remove your restaurant, due to a problem with the website");
+            };
+
+            const onInternalError = () => {
+                onError("Sorry, but we are unable to remove your restaurant, due to a problem with the website");
+            };
+
+            DeleteRestaurantAsync(
+                restaurantId,
+                authContext.currentUser.jwt,
+                onOk,
+                onUnauthorized,
+                onForbidden,
+                onNotFound,
+                onInternalError);
+        };
+
+        deleteRestaurant();
     }
 
-    async function addNewRestaurant() {
-
-        setAddingStatus("Adding restaurant...");
-
-        const response = await fetch('https://localhost:44305/restaurant', {
-            credentials: 'include',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + props.jwt
-            },
-            body: JSON.stringify({
-                businessName: businessName.value,
-                addressLine1: addressLine1.value,
-                addressLine2: addressLine2.value,
-                town: town.value,
-                county: county.value,
-                postCode: postCode.value,
-                email: email.value,
-                phone: phone.value
-            }),
-        });
-
-        if (response.status >= 200 && response.status <= 299) {
-            props.onRestaurantAdded();
-            setAddingStatus("");
-        }
-        else if (response.status === 400) {
-            setAddingStatus("Unable to add new restaurant due to the below errors");
-            let result = await response.json();
-            let validationErrors = [];
-            for (let field in result.errors) {
-                validationErrors.push(result.errors[field][0]);
-            }
-            setValidationErrors(validationErrors);
-        }
-        else if (response.status === 401 || response.status === 403) {
-            setAddingStatus("Unable to add new restaurant as your session has timed out. Please log in again.");
-        }
-        else if (response.status === 409) {
-            setAddingStatus("Unable to add new restaurant as the same name and post code already exist.");
-        }
-        else {
-            setAddingStatus("Sorry, but we are unable to add your restaurants, due to a problem with the website");
-        }
+    let displayButton;
+    if (!isDeleting && !isDeleteRequested) {
+        displayButton = (
+            <Button color="danger" size="sm" onClick={() => setIsDeleteRequested(true)}>
+                Remove restaurant?
+            </Button>
+        );
+    }
+    else if (isDeleteRequested) {
+        displayButton = (
+            <div>
+                <div>Please confirm that you would like to remove your restaurant details - your restaurant will no longer participate.</div>
+                <ButtonGroup>
+                    <Button color="danger" size="sm" onClick={handleDelete}>Confirm</Button>
+                    <Button color="secondary" size="sm" onClick={() => setIsDeleteRequested(false)}>Cancel</Button>
+                </ButtonGroup>
+            </div>
+        );
+    }
+    else {
+        displayButton = (
+            <Button color="danger" size="sm" disabled>
+                <Spinner color="light" size="sm" />
+            </Button>
+        );
     }
 
     return (
         <div>
-            <Form>
-                <FormGroup>
-                    <Label for="businessname">Business name</Label>
-                    <Input type="text" placeholder="business name" id="businessname" {...businessName} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="addressline1">Address line 1</Label>
-                    <Input type="text" placeholder="address line 1" id="addressline1" {...addressLine1} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="addressline2">Address line 2</Label>
-                    <Input type="text" placeholder="address line 2" id="addressline2" {...addressLine2} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="town">Town</Label>
-                    <Input type="text" placeholder="town" id="town" {...town} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="county">County</Label>
-                    <Input type="text" placeholder="county" id="county" {...county} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="postcode">Post code</Label>
-                    <Input type="text" placeholder="post code" id="postcode" {...postCode} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="email">Email</Label>
-                    <Input type="email" placeholder="name@example.com" id="email" {...email} />
-                </FormGroup>
-                <FormGroup>
-                    <Label for="phone">Phone</Label>
-                    <Input type="text" placeholder="01483 487958" id="phone" {...phone} />
-                </FormGroup>
-                <Button color="primary" type="submit" onClick={handleAddNewRestaurant} disabled={false}>
-                    Submit
-            </Button>
-            </Form>
-            <Status status={addingStatus} />
-            {validationErrors.map(ve => <ValidationError message={ve} key={ve} />)}
+            {displayButton}
         </div>
     );
 }
 
-function ValidationError(props) {
-    if (props.message) {
-        return (
-            <div className="text-danger">
-                {props.message}
-            </div>
-        );
-    }
-    else {
-        return (
-            <div></div>
-        );
-    }
-}
+function UpdateNumberOfServings({ restaurantId, onSuccess }) {
+    const numberAvailableServingsDefaultValue = "enter number here";
 
-function DeleteRestaurant(props) {
-    const [isDeleting, setIsDeleting] = useState(false)
-
-    function handleDelete(e) {
-        e.preventDefault();
-        deleteRestaurant();
-    }
-
-    async function deleteRestaurant() {
-        setIsDeleting(true);
-
-        const response = await fetch('https://localhost:44305/restaurant/' + props.restaurantId, {
-            credentials: 'include',
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + props.jwt
-            },
-            body: null,
-        });
-
-        if (response.status >= 200 && response.status <= 299) {
-            props.onRestaurantDeleted();
-        }
-        else if (response.status === 401 || response.status === 403) {
-            props.onError("Unable to add new restaurant as your session has timed out. Please log in again.");
-        }
-        else if (response.status === 409) {
-            props.onError("Unable to add new restaurant as the same name and post code already exist.");
-        }
-        else {
-            props.onError("Sorry, but we are unable to add your restaurants, due to a problem with the website");
-        }
-
-        setIsDeleting(false);
-    }
-
-    let button;
-    if (!isDeleting) {
-        button = (
-            <Button color="danger" size="sm" onClick={handleDelete}>
-                DELETE
-            </Button>);
-    }
-    else {
-        button = (
-            <Button color="danger" size="sm" onClick={handleDelete} disabled>
-                <Spinner color="light" size="sm" />
-            </Button>);
-    }
-
-    return (
-        <div className="text-right">
-            {button}
-        </div>
-    );
-}
-
-function Status(props) {
-    return (
-        props.status
-            ?
-            <div className="p-2 my-2 bg-warning text-dark">
-                {props.status}
-            </div>
-            :
-            <div></div>
-    );
-}
-
-function useFormInput(initValue, validate) {
-    const [value, setValue] = useState(initValue);
+    const authContext = useContext(AuthContext);
+    const [errorStatus, setErrorStatus] = useState("");
+    const [okStatus, setOkStatus] = useState("");
+    const [numberAvailableServings, setNumberAvailableServings] = useState(numberAvailableServingsDefaultValue);
 
     function handleChange(e) {
-        setValue(e.target.value);
+        setNumberAvailableServings(e.target.value);
     }
 
-    function handleValidation(e) {
-        if (validate) {
-            setValue(validate(e.target.value));
-        }
+    function handleUpdate(e) {
+        e.preventDefault();
+
+        setErrorStatus("");
+        setOkStatus("");
+
+        const onOk = () => {
+            setNumberAvailableServings("");
+            setOkStatus("Successfully updated number of available servings");
+            setTimeout(() => setOkStatus(""), 3000);
+            if (onSuccess) {
+                onSuccess();
+            }
+        };
+
+        const onBadRequest = () => {
+            setErrorStatus("Please enter a valid number");
+        };
+
+        const onError = () => {
+            setErrorStatus("Unable to update number of servings - please try again later");
+        };
+
+        UpdateNumberOfServingsAsync(
+            restaurantId,
+            numberAvailableServings,
+            authContext.currentUser.jwt,
+            onOk,
+            onBadRequest,
+            onError,
+            onError,
+            onError);
     }
 
-    return {
-        value,
-        onChange: handleChange,
-        onBlur: handleValidation,
-    };
+    return (
+        <div>
+            <div>Number of available servings</div>
+            <Form inline>
+                <FormGroup className="mb-2 mr-sm-2 mb-sm-0">
+                    <Input type="number" placeholder={numberAvailableServings} id="numberofservings" onChange={handleChange} />
+                </FormGroup>
+                <Button className="mb-2 mr-sm-2 mb-sm-0" color="primary" type="submit" onClick={handleUpdate} disabled={false}>
+                    Update
+                </Button>
+            </Form>
+
+            <Status className="mb-2 mr-sm-2 mb-sm-0" status={errorStatus} isError={true} />
+            <Status className="mb-2 mr-sm-2 mb-sm-0" status={okStatus} />
+        </div>
+    );
 }

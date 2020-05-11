@@ -1,8 +1,9 @@
 ﻿
 namespace SignOn.Models
 {
-    public class UserRoles
+    public class AuthRoles
     {
+        public static readonly string ROLE_ADMINISTRATOR = "Admin";
         public static readonly string ROLE_RESTAURANT_OWNER = "RestaurantOwner";
     }
 }

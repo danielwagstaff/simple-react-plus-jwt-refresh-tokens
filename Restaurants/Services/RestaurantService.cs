@@ -10,6 +10,8 @@ namespace Restaurants.Services
     {
         IEnumerable<Restaurant> Search(long? userId);
         Restaurant Add(Restaurant restaurant);
+        void Verify(long restaurantId);
+        void UpdateNumberOfServings(long userId, long restaurantId, int numberAvailable);
         bool Remove(long userId, long restaurantId);
     }
 
@@ -31,19 +33,78 @@ namespace Restaurants.Services
 
         public Restaurant Add(Restaurant newRestaurant)
         {
+            var userAlreadyHasRestaurant = restaurants.Any(restaurant => restaurant.OwnerId == newRestaurant.OwnerId);
+
             var newRestaurantIsUnique = !restaurants.Any(restaurant => 
                 restaurant.PostCode == newRestaurant.PostCode
                 && restaurant.BusinessName == newRestaurant.BusinessName);
 
-            if (newRestaurantIsUnique)
+            if (!userAlreadyHasRestaurant)
             {
-                newRestaurant.Id = (restaurants.LastOrDefault() ?? new Restaurant()).Id + 1;
-                restaurants.Add(newRestaurant);
-                return newRestaurant;
+                if (newRestaurantIsUnique)
+                {
+                    newRestaurant.Id = (restaurants.LastOrDefault() ?? new Restaurant()).Id + 1;
+                    newRestaurant.IsVerified = false;
+                    restaurants.Add(newRestaurant);
+                    return newRestaurant;
+                }
+                else
+                {
+                    throw new RestaurantAlreadyExistsException();
+                }
             }
             else
             {
-                throw new RestaurantAlreadyExistsException();
+                throw new OwnerAlreadyHasRestaurantException();
+            }
+        }
+
+        public void Verify(long restaurantId)
+        {
+            try
+            {
+                var restaurant = restaurants.SingleOrDefault(restaurant => restaurant.Id == restaurantId);
+                if (restaurant != null)
+                {
+                    restaurant.IsVerified = true;
+                    _logger.LogInformation($"Successfully validated restaurant, ID={restaurant.Id}");
+                }
+                else
+                {
+                    throw new RestaurantDoesNotExistException();
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw new RestaurantIdDuplicatedException();
+            }
+        }
+
+        public void UpdateNumberOfServings(long userId, long restaurantId, int numberAvailable)
+        {
+            try
+            {
+                var restaurant = restaurants.SingleOrDefault(restaurant => restaurant.Id == restaurantId);
+                if (restaurant != null)
+                {
+                    if (restaurant.OwnerId == userId)
+                    {
+                        restaurant.NumberOfAvailableServings = numberAvailable;
+                        _logger.LogInformation($"Successfully updated restaurant (ID={restaurant.Id}) available servings to {numberAvailable}");
+                    }
+                    else
+                    {
+                        throw new RestaurantNotOwnedByRequestorException();
+                    }
+                }
+                else
+                {
+                    throw new RestaurantDoesNotExistException();
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw new RestaurantIdDuplicatedException();
             }
         }
 
@@ -96,6 +157,13 @@ namespace Restaurants.Services
         public RestaurantDoesNotExistException() : base() { }
         public RestaurantDoesNotExistException(string message) : base(message) { }
         public RestaurantDoesNotExistException(string message, System.Exception inner) : base(message, inner) { }
+    }
+
+    public class OwnerAlreadyHasRestaurantException : Exception
+    {
+        public OwnerAlreadyHasRestaurantException() : base() { }
+        public OwnerAlreadyHasRestaurantException(string message) : base(message) { }
+        public OwnerAlreadyHasRestaurantException(string message, System.Exception inner) : base(message, inner) { }
     }
 
     public class RestaurantNotOwnedByRequestorException : Exception
